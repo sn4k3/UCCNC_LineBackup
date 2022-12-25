@@ -1,9 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Text;
+using System.Diagnostics;
+using System.IO;
 using System.Windows.Forms;
 
 namespace Plugins
@@ -13,6 +10,19 @@ namespace Plugins
         public ConfigForm()
         {
             InitializeComponent();
+            tbBackupFolder.Text = BackupManager.Folder;
+            nmBackupFrequency.Value = BackupManager.BackupFrequencyMs;
+        }
+
+        private void CtrlClicked(object sender, EventArgs e)
+        {
+            if (ReferenceEquals(sender, btnOpenBackupFolder))
+            {
+                if (!Directory.Exists(BackupManager.Folder)) return;
+                using (Process.Start(BackupManager.Folder)) { }
+
+                return;
+            }
         }
     }
 }

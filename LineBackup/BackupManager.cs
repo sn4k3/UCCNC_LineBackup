@@ -1,18 +1,45 @@
 ﻿using System;
 using System.IO;
 using System.Text;
-using System.Windows.Forms;
 
 namespace Plugins
 {
     public sealed class BackupManager : IDisposable
     {
+        /// <summary>
+        /// Maximum backup files
+        /// </summary>
         public const byte MaxFiles = 2;
+
+        /// <summary>
+        /// Gets the backup frequency time in milliseconds (ms)
+        /// </summary>
+        public const ushort BackupFrequencyMs = 1000;
+
+        /// <summary>
+        /// Folder to save backups
+        /// </summary>
         public const string Folder = "Contents\\LineBackupPlugin";
+
+        /// <summary>
+        /// Backup filename
+        /// </summary>
         public const string Filename = "LineBackup";
+
+        /// <summary>
+        /// Backup file extension
+        /// </summary>
         public const string FileExtension = "txt";
-        private FileStream[] Files { get; } = new FileStream[MaxFiles];
-        private byte CurrentFileIndex { get; set; }
+
+        /// <summary>
+        /// Cache of the files
+        /// </summary>
+        private readonly FileStream[] _fileStreams = new FileStream[MaxFiles];
+
+        /// <summary>
+        /// Current backup file being used
+        /// </summary>
+        private byte _currentFileIndex;
 
         public BackupManager()
         {
@@ -20,18 +47,18 @@ namespace Plugins
 
         public static string GetFilePath(byte index)
         {
-            return $"{Folder}{Path.DirectorySeparatorChar}{Filename}{index}.{FileExtension}";
+            return $"{Path.Combine(Folder, $"{Filename}{index}.{FileExtension}")}";
         }
 
         public static BackupData ReadBackup()
         {
-            BackupData backupData = new BackupData();
-            BackupData tempBackupData = new BackupData();
+            var backupData = new BackupData();
+            var tempBackupData = new BackupData();
             for (byte i = 0; i < MaxFiles; i++)
             {
-                string file = GetFilePath(i);
+                var file = GetFilePath(i);
                 if (!File.Exists(file)) continue;
-                string content = File.ReadAllText(file);
+                var content = File.ReadAllText(file);
                 if(string.IsNullOrWhiteSpace(content))  continue;
                 
                 tempBackupData.LoadFromString(content);
@@ -49,14 +76,10 @@ namespace Plugins
         {
             Directory.CreateDirectory(Folder);
             DeleteBackups();
-            for (byte i = 0; i < Files.Length; i++)
+            for (byte i = 0; i < _fileStreams.Length; i++)
             {
-                if (!ReferenceEquals(Files[i], null))
-                {
-                    continue;
-                }
-
-                Files[i] = File.Open(GetFilePath(i), FileMode.Create, FileAccess.Write);
+                if (!ReferenceEquals(_fileStreams[i], null)) continue;
+                _fileStreams[i] = File.Open(GetFilePath(i), FileMode.Create, FileAccess.Write);
             }
         }
 
@@ -64,16 +87,13 @@ namespace Plugins
         {
             for (var i = 0; i < MaxFiles; i++)
             {
-                if (ReferenceEquals(Files[i], null))
-                {
-                    continue;
-                }
+                if (_fileStreams[i] is null) continue;
 
                 try
                 {
-                    Files[i].Close();
-                    Files[i].Dispose();
-                    Files[i] = null;
+                    _fileStreams[i].Close();
+                    _fileStreams[i].Dispose();
+                    _fileStreams[i] = null;
                 }
                 catch (Exception)
                 {
@@ -84,29 +104,34 @@ namespace Plugins
 
         public static void DeleteBackups()
         {
-            DirectoryInfo di = new DirectoryInfo(Folder);
+            var di = new DirectoryInfo(Folder);
 
-            foreach (FileInfo file in di.GetFiles())
+            foreach (var file in di.GetFiles())
             {
                 if (!file.Name.StartsWith(Filename)) continue;
                 file.Delete();
             }
         }
 
-        public void Write(string content)
+        public void Write(BackupData data)
         {
-            if(ReferenceEquals(Files[CurrentFileIndex], null)) return;
+            Write(data.GetStringToFileWrite());
+        }
+
+        private void Write(string content)
+        {
+            if(_fileStreams[_currentFileIndex] is null) return;
 
             try
             {
-                Files[CurrentFileIndex].SetLength(0);
-                byte[] bytes = Encoding.ASCII.GetBytes(content);
-                Files[CurrentFileIndex].Write(bytes, 0, bytes.Length);
-                Files[CurrentFileIndex].Flush(true);
+                _fileStreams[_currentFileIndex].SetLength(0);
+                var bytes = Encoding.UTF8.GetBytes(content);
+                _fileStreams[_currentFileIndex].Write(bytes, 0, bytes.Length);
+                _fileStreams[_currentFileIndex].Flush(true);
 
-                CurrentFileIndex++;
-                if (CurrentFileIndex >= MaxFiles)
-                    CurrentFileIndex = 0;
+                _currentFileIndex++;
+                if (_currentFileIndex >= MaxFiles)
+                    _currentFileIndex = 0;
             }
             catch (Exception)
             {

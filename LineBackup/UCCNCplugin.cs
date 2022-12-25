@@ -1,5 +1,5 @@
 ﻿using System;
-using System.Windows.Forms;
+using System.Diagnostics;
 
 namespace Plugins
 {
@@ -19,6 +19,9 @@ namespace Plugins
 
         private BackupData BackupData { get; set; }
 
+        private long currentTime;
+        private Stopwatch StopWatchTimer;
+
 
         public UCCNCplugin()
         {
@@ -32,6 +35,7 @@ namespace Plugins
             PluginForm = new PluginForm(this);
             BackupData = new BackupData();
             LineManager = new BackupManager();
+            StopWatchTimer = new Stopwatch();
 
             var backup = BackupManager.ReadBackup();
             if (backup.CurrentLine > 0)
@@ -46,7 +50,7 @@ namespace Plugins
         {
             Properties.author = "Tiago Conceição";
             Properties.pluginname = "LineBackup"; 
-            Properties.pluginversion = "1.0";
+            Properties.pluginversion = "1.1";
 
             return Properties;
         }
@@ -55,33 +59,24 @@ namespace Plugins
         //Typically the plugin configuration window is shown to the user.
         public void Configure_event()
         {
-            if (ReferenceEquals(ConfigForm, null))
-            {
-                ConfigForm = new ConfigForm();
-            }
-            
+            if (ConfigForm is null) ConfigForm = new ConfigForm();
+            else if (ConfigForm.IsDisposed) ConfigForm = new ConfigForm();
             ConfigForm.ShowDialog();
         }
 
         //Called from UCCNC when the plugin is loaded and started.
         public void Startup_event()
         {
-            if (PluginForm.IsDisposed)
-            {
-                PluginForm = new PluginForm(this);
-            }
-            PluginForm.Show();
+            /*if (PluginForm.IsDisposed) PluginForm = new PluginForm(this);
+            PluginForm.Show();*/
         }
 
         //Called when the Pluginshowup(string Pluginfilename); function is executed in the UCCNC.
         public void Showup_event()
         {
-            if (PluginForm.IsDisposed)
-            {
-                PluginForm = new PluginForm(this);
-            }
+            /*if (PluginForm.IsDisposed) PluginForm = new PluginForm(this);
             PluginForm.Show();
-            PluginForm.BringToFront();
+            PluginForm.BringToFront();*/
         }
 
         //Called when the UCCNC software is closing.
@@ -92,16 +87,22 @@ namespace Plugins
                 PluginForm.Close();
                 LineManager.Dispose();
             }
-            catch (Exception) { }
+            catch (Exception)
+            {
+                // ignored
+            }
         }
 
         //Called in a loop with a 25Hz interval.
         public void Loop_event() 
         {
-            if (LoopStop)
+            if (LoopStop || LoopWorking)
             {
                 return;
             }
+
+            // Call at a set time frequency
+            if (StopWatchTimer.ElapsedMilliseconds < BackupManager.BackupFrequencyMs) return;
 
             LoopWorking = true;
 
@@ -111,22 +112,16 @@ namespace Plugins
                 //Write code here which has to be run on first cycle only...
             }*/
 
-            uint line = GetCurrentLine();
+            var line = GetCurrentLine();
             if (BackupData.CurrentLine != line)
             {
                 BackupData.CurrentLine = line;
                 BackupData.CurrentTime = GetCurrentTime();
 
-                try
-                {
-                    LineManager.Write(BackupData.GetStringToFileWrite());
-                }
-                catch (Exception)
-                {
-                    // ignored
-                }
+                LineManager.Write(BackupData);
             }
 
+            StopWatchTimer.Restart();
             LoopWorking = false;
         }
 
@@ -230,12 +225,14 @@ namespace Plugins
             BackupData.CurrentTime = GetCurrentTime();
             BackupData.LoadedFile = GetLoadedFile();
             LineManager.Init();
+            StopWatchTimer.Restart();
             LoopStop = false;
         }
 
         public void Cyclethreadfinish_event()
         {
             LoopStop = true;
+            StopWatchTimer.Stop();
 
             try
             {
@@ -248,22 +245,22 @@ namespace Plugins
             }
         }
 
-        string GetCurrentLineString()
+        private string GetCurrentLineString()
         {
             return UC.Getfield(true, GcodeLineID);
         }
 
-        uint GetCurrentLine()
+        private uint GetCurrentLine()
         {
             return uint.Parse(GetCurrentLineString());
         }
 
-        string GetCurrentTime()
+        private string GetCurrentTime()
         {
             return UC.Getfield(true, CurrentTimeID);
         }
 
-        string GetLoadedFile()
+        private string GetLoadedFile()
         {
             return UC.Getfield(true, LoadedFileID).Trim();
         }
